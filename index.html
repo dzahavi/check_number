@@ -177,6 +177,10 @@
       <label class="label" for="user-name">Your name</label>
       <input class="name-input" id="user-name" type="text" maxlength="40" autocomplete="given-name" placeholder="For example, David">
     </div>
+    <div class="field">
+      <label class="label" for="user-email">Work email (must end in intel.com)</label>
+      <input class="name-input" id="user-email" type="email" maxlength="80" autocomplete="email" placeholder="name@intel.com">
+    </div>
     <div>
       <span class="label" id="cells-label">Enter 10 digits</span>
       <div class="cells" id="cells" role="group" aria-labelledby="cells-label" data-state="idle"></div>
@@ -193,7 +197,9 @@
 
 <script>
 (function () {
-  var TARGET = "2134567890";
+  var TARGET = "8206195734";
+  // Paste the Google Apps Script web app URL (ends in /exec) between the quotes.
+  var SHEET_URL = "https://script.google.com/macros/s/AKfycbzAsJZV3dmhFZjhnrACCCJ9qlxpRsc43pbY_0OK8rCfQQeFzacyGGHD30aq0ncHE1M/exec";
   var LENGTH = 10;
   var cellsEl = document.getElementById("cells");
   var resultEl = document.getElementById("result");
@@ -209,6 +215,32 @@
   function esc(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
+  var emailEl = document.getElementById("user-email");
+  var busy = false;
+
+  function validEmail(s) {
+    return /^[^\s@]+@([a-z0-9-]+\.)*intel\.com$/.test(s);
+  }
+  function report(state, html) {
+    setState(state, html);
+    try { resultEl.scrollIntoView({ block: "nearest" }); } catch (err) {}
+  }
+  function warn(msg, el) {
+    report("warn", msg);
+    if (el) el.focus();
+  }
+  function saveToSheet(name, email) {
+    if (!SHEET_URL) return Promise.resolve("unconfigured");
+    return fetch(SHEET_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ name: name, email: email })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { return d && d.status ? d.status : "error"; })
+      .catch(function () { return "error"; });
+  }
+
   function who() {
     var n = nameEl.value.trim();
     return n ? ", " + esc(n) : "";
@@ -288,20 +320,35 @@
 
   document.getElementById("check-form").addEventListener("submit", function (e) {
     e.preventDefault();
+    if (busy) return;
+    var nm = nameEl.value.trim();
+    var em = emailEl.value.trim().toLowerCase();
+    if (!nm) { warn("Enter your name first.", nameEl); return; }
+    if (!validEmail(em)) { warn("Enter an email address that ends in intel.com.", emailEl); return; }
     var v = value();
     if (v.length < LENGTH) {
-      var missing = LENGTH - v.length;
-      setState("warn", "Enter all 10 digits first. " + missing + " still empty.");
-      cellsEl.dataset.state = "idle";
       var firstEmpty = inputs.findIndex(function (el) { return !el.value; });
-      focusCell(firstEmpty);
+      warn("Enter all 10 digits first. " + (LENGTH - v.length) + " still empty.", inputs[firstEmpty]);
       return;
     }
-    if (v === TARGET) {
-      setState("ok", '<span class="mark" aria-hidden="true">&#10003;</span><span><strong>Match' + who() + '.</strong> This is the stored number.</span>');
-    } else {
-      setState("bad", '<span class="mark" aria-hidden="true">&#10005;</span><span><strong>No match' + who() + '.</strong> This is not the stored number.</span>');
+    if (v !== TARGET) {
+      report("bad", '<span class="mark" aria-hidden="true">&#10005;</span><span><strong>No match' + who() + '.</strong> This is not the stored number.</span>');
+      return;
     }
+    busy = true;
+    report("warn", "Number matches. Saving your details...");
+    saveToSheet(nm, em).then(function (status) {
+      busy = false;
+      if (status === "saved") {
+        report("ok", '<span class="mark" aria-hidden="true">&#10003;</span><span><strong>Match' + who() + '.</strong> This is the stored number. Your name and email are saved.</span>');
+      } else if (status === "duplicate") {
+        warn("The number matches, but this email is already registered. Use a different email.", emailEl);
+      } else if (status === "unconfigured") {
+        report("warn", "The number matches, but saving to the sheet is not set up yet, so nothing was saved.");
+      } else {
+        report("warn", "The number matches, but saving failed. Check your connection and press Check number again.");
+      }
+    });
   });
 
   document.getElementById("clear-btn").addEventListener("click", function () {
@@ -313,3 +360,4 @@
 </script>
 </body>
 </html>
+
