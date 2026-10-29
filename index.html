@@ -229,6 +229,16 @@
     report("warn", msg);
     if (el) el.focus();
   }
+  function logGuess(name, email, guess) {
+    if (!SHEET_URL) return;
+    try {
+      fetch(SHEET_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ kind: "guess", name: name, email: email, guess: guess })
+      }).catch(function () {});
+    } catch (err) {}
+  }
   function saveToSheet(name, email) {
     if (!SHEET_URL) return Promise.resolve("unconfigured");
     return fetch(SHEET_URL, {
@@ -332,6 +342,7 @@
       return;
     }
     if (v !== TARGET) {
+      logGuess(nm, em, v);
       report("bad", '<span class="mark" aria-hidden="true">&#10005;</span><span><strong>No match' + who() + '.</strong> This is not the stored number.</span>');
       return;
     }
